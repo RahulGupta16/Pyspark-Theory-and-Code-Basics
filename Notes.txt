@@ -12,6 +12,7 @@ Spark is designed to support a wide range of data analytics tasks, ranging from 
 loading and SQL queries to machine learning and streaming computation, over the same computing 
 engine and with a consistent set of APIs. 
 
+
 PROPERTIES-
 1. Spark’s unified nature makes these tasks both easier and more efficient to write. First, Spark
 provides consistent, composable APIs that you can use to build an application out of smaller
@@ -46,3 +47,68 @@ Spark includes libraries for SQL and structured data (Spark SQL), machine learni
 stream processing (Spark Streaming and the newer Structured Streaming), and graph
 analytics (GraphX). Beyond these libraries, there are hundreds of open source external
 libraries ranging from connectors for various storage systems to machine learning algorithms.
+
+
+SPARK ARCHITECTURE
+
+Single machines do not have enough power and resources to perform
+computations on huge amounts of information (or the user probably does not have the time to
+wait for the computation to finish). A cluster (or group of computers), pools the resources of
+many machines together, giving us the ability to use all the cumulative resources as if they were
+a single computer. Now, a group of machines alone is not powerful, you need a framework to
+coordinate work across them. Spark does just that, managing and coordinating the execution of
+tasks on data across a cluster of computers.
+
+
+Spark Applications consist of 
+(i): a driver process.
+(ii): a set of executor processes.
+
+The driver process runs your main() function, sits on a node in the cluster, and is responsible 
+for three things: maintaining information about the Spark Application; responding to a user’s program or input;
+and analyzing, distributing, and scheduling work across the executors.  It maintains all
+relevant information during the lifetime of the application.
+
+The executors are responsible for actually carrying out the work that the driver assigns them.
+This means that each executor is responsible for only two things: executing code assigned to it
+by the driver, and reporting the state of the computation on that executor back to the driver node.
+
+In shorts, Spark employs a cluster manager that keeps track of the resources available. The driver process 
+is responsible for executing the driver program’s commands across the executors to complete a given task. 
+
+
+STARTING SPARK
+When you start Spark in this interactive mode, you implicitly create a SparkSession that manages
+the Spark Application. When you start it through a standalone application, you must create the
+SparkSession object yourself in your application code. The SparkSession instance is the way Spark executes
+user-defined manipulations across the cluster. There is a one-to-one correspondence between a
+SparkSession and a Spark Application. 
+  
+
+In Python, the variable is available as "spark" when you start the console.
+
+>>>> spark
+
+Let’s now perform the simple task of creating a range of numbers. This range of numbers is just
+like a named column in a spreadsheet:
+
+>>>> myRange = spark.range(1000).toDF("number")
+
+Here above, we created a DataFrame with one column containing 1,000
+rows with values from 0 to 999. This range of numbers represents a distributed collection. When
+run on a cluster, each part of this range of numbers exists on a different executor. This is a Spark
+DataFrame.
+
+
+DATAFRAMES-
+A DataFrame is the most common Structured API and simply represents a table of data with
+rows and columns. A spreadsheet sits on one computer in one specific
+location, whereas a Spark DataFrame can span thousands of computers.
+
+Partitions-
+To allow every executor to perform work in parallel, Spark breaks up the data into chunks called
+partitions. A partition is a collection of rows that sit on one physical machine in your cluster. A
+DataFrame’s partitions represent how the data is physically distributed across the cluster of
+machines during execution. If you have one partition, Spark will have a parallelism of only one,
+even if you have thousands of executors. If you have many partitions but only one executor,
+Spark will still have a parallelism of only one because there is only one computation resource.
