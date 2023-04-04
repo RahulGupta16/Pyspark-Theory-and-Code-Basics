@@ -1,0 +1,48 @@
+GENERAL INTRODUCTION INTO SPARK-
+
+Apache Spark is a unified computing engine and a set of libraries for parallel data processing on
+computer clusters. Spark is the most actively developed open source engine for this task, making
+it a standard tool for any developer or data scientist interested in big data. Spark supports 
+multiple widely used programming languages (Python, Java, Scala, and R), includes libraries for
+diverse tasks ranging from SQL to streaming and machine learning, and runs anywhere from a laptop
+to a cluster of thousands of servers. This makes it an easy system to start with and scale-up 
+big data processing or incredibly large scale.
+
+Spark is designed to support a wide range of data analytics tasks, ranging from simple data 
+loading and SQL queries to machine learning and streaming computation, over the same computing 
+engine and with a consistent set of APIs. 
+
+PROPERTIES-
+1. Spark’s unified nature makes these tasks both easier and more efficient to write. First, Spark
+provides consistent, composable APIs that you can use to build an application out of smaller
+pieces or out of existing libraries. It also makes it easy for you to write your own analytics
+libraries on top. Spark’s APIs are also designed to enable high performance by optimizing across
+the different libraries and functions composed together in a user program. 
+
+For example, if you load data using a SQL query and
+then evaluate a machine learning model over it using Spark’s ML library, the engine can
+combine these steps into one scan over the data. The combination of general APIs and high
+performance execution, no matter how you combine them, makes Spark a powerful platform
+for interactive and production applications.
+
+2. Spark handles loading data from storage systems and
+performing computation on it, not permanent storage as the end itself. You can use Spark
+with a wide variety of persistent storage systems, including cloud storage systems such as
+Azure Storage and Amazon S3, distributed file systems such as Apache Hadoop, key-value
+stores such as Apache Cassandra, and message buses such as Apache Kafka. However, Spark
+neither stores data long term itself, nor favors one over another. The key motivation here is
+that most data already resides in a mix of storage systems. Data is expensive to move so
+Spark focuses on performing computations over the data, no matter where it resides. In userfacing 
+APIs, Spark works hard to make these storage systems look largely similar so that
+applications do not need to worry about where their data is.
+
+3. Spark’s final component is its libraries, which build on its design as a unified engine to
+provide a unified API for common data analysis tasks. Spark supports both standard libraries
+that ship with the engine as well as a wide array of external libraries published as third-party
+packages by the open source communities. Today, Spark’s standard libraries are actually the
+bulk of the open source project: the Spark core engine itself has changed little since it was
+first released, but the libraries have grown to provide more and more types of functionality.
+Spark includes libraries for SQL and structured data (Spark SQL), machine learning (MLlib),
+stream processing (Spark Streaming and the newer Structured Streaming), and graph
+analytics (GraphX). Beyond these libraries, there are hundreds of open source external
+libraries ranging from connectors for various storage systems to machine learning algorithms.
