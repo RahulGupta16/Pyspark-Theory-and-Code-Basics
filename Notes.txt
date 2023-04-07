@@ -112,3 +112,210 @@ DataFrame’s partitions represent how the data is physically distributed across
 machines during execution. If you have one partition, Spark will have a parallelism of only one,
 even if you have thousands of executors. If you have many partitions but only one executor,
 Spark will still have a parallelism of only one because there is only one computation resource.
+With DataFrames you do not (for the most part) manipulate
+partitions manually or individually. You simply specify high-level transformations of data in the
+physical partitions, and Spark determines how this work will actually execute on the cluster.
+
+
+Transformations-
+In Spark, the core data structures are immutable, meaning they cannot be changed after they’re
+created. To “change” a DataFrame, you need to instruct Spark how you would like to
+modify it to do what you want. These instructions are called transformations.
+
+# in Python
+>>>> divisBy2 = myRange.where("number % 2 = 0")
+
+Notice that these return no output. This is because we specified only an abstract transformation,
+and Spark will not act on transformations until we call an action.
+
+Transformations are the core of how you express your business logic using Spark. There are two
+types of transformations: those that specify narrow dependencies, and those that specify wide
+dependencies.
+
+Transformations consisting of narrow dependencies (we’ll call them narrow transformations) are
+those for which each input partition will contribute to only one output partition. In the preceding
+code snippet, the where statement specifies a narrow dependency, where only one partition
+contributes to at most one output partition.
+
+A wide dependency (or wide transformation) style transformation will have input partitions
+contributing to many output partitions. This is also referred as 'Shuffle'.
+
+
+
+Lazy Evaluation-
+Lazy evaulation means that Spark will wait until the very last moment to execute the graph of
+computation instructions. In Spark, instead of modifying the data immediately when you express
+some operation, you build up a plan of transformations that you would like to apply to your
+source data. By waiting until the last minute to execute the code, Spark compiles this plan from
+your raw DataFrame transformations to a streamlined physical plan that will run as efficiently as
+possible across the cluster. This provides some immense benifit as Spark can optimize the
+entire data flow from end to end.
+
+If we build a large Spark job but specify a filter at the end that only requires us to
+fetch one row from our source data, the most efficient way to execute this is to access the single
+record that we need. Spark will actually optimize this for us by pushing the filter down
+automatically.
+
+
+Actions-
+Transformations allow us to build up our logical transformation plan. To trigger the computation,
+we run an action. An action instructs Spark to compute a result from a series of transformations. 
+
+Eg.
+
+>>>> divisBy2.count()  # gives us the total number of records in the DataFrame
+
+There are three kinds of actions:
+1. Actions to view data in the console
+2. Actions to collect data to native objects in the respective language
+3. Actions to write to output data sources
+
+
+Lets refer one eg.
+
+Now, let’s sort our data according to the count column, which is an integer type.
+
+Nothing happens to the data when we call sort because it’s just a transformation. However, we
+can see that Spark is building up a plan for how it will execute this across the cluster by looking
+at the explain plan. We can call "explain" on any DataFrame object to see the DataFrame’s
+lineage (or how Spark will execute this query):
+
+>>>> flightData2015.sort("count").explain()                       ### "explain" method is used to see the DataFrame’s lineage (or how Spark will execute this query)
+
+O/P-
+== Physical Plan ==
+*Sort [count#195 ASC NULLS FIRST], true, 0
++- Exchange rangepartitioning(count#195 ASC NULLS FIRST, 200)
++- *FileScan csv [DEST_COUNTRY_NAME#193,ORIGIN_COUNTRY_NAME#194,count#195] ...
+
+You can read "explain" plans from top to bottom, the
+top being the end result, and the bottom being the source(s) of data. In this case, take a look at
+the first keywords. You will see sort, exchange, and FileScan. That’s because the sort of our data
+is actually a wide transformation because rows will need to be compared with one another.
+
+
+The logical plan of transformations that we build up defines a lineage for the DataFrame so that
+at any given point in time, Spark knows how to recompute any partition by performing all of the
+operations it had before on the same input data. This sits at the heart of Spark’s programming
+model—functional programming where the same inputs always result in the same outputs when
+the transformations on that data stay constant.
+We do not manipulate the physical data; instead, we configure physical execution characteristics
+through things like the shuffle partitions parameter.
+
+
+DATAFRAMES AND SQL
+
+We worked through a simple transformation in the previous example, let’s now work through a
+more complex one and follow along in both DataFrames and SQL. Spark can run the same
+transformations, regardless of the language, in the exact same way. You can express your
+business logic in SQL or DataFrames (either in R, Python, Scala, or Java) and Spark will
+compile that logic down to an underlying plan (that you can see in the explain plan) before
+actually executing your code. With Spark SQL, you can register any DataFrame as a table or
+view (a temporary table) and query it using pure SQL. There is no performance difference
+between writing SQL queries or writing DataFrame code, they both “compile” to the same
+underlying plan that we specify in DataFrame code.
+
+To make any DataFrame into a table or view, call this: 
+>>>> flightData2015.createOrReplaceTempView("flight_data_2015") 
+
+
+# in Python
+sqlWay = spark.sql("""
+SELECT DEST_COUNTRY_NAME, count(1)
+FROM flight_data_2015
+GROUP BY DEST_COUNTRY_NAME
+""")
+
+
+dataFrameWay = flightData2015\
+.groupBy("DEST_COUNTRY_NAME")\
+.count()
+sqlWay.explain()
+dataFrameWay.explain()
+
+
+== Physical Plan ==
+*HashAggregate(keys=[DEST_COUNTRY_NAME#182], functions=[count(1)])
++- Exchange hashpartitioning(DEST_COUNTRY_NAME#182, 5)
++- *HashAggregate(keys=[DEST_COUNTRY_NAME#182], functions=[partial_count(1)])
++- *FileScan csv [DEST_COUNTRY_NAME#182] ...
+== Physical Plan ==
+*HashAggregate(keys=[DEST_COUNTRY_NAME#182], functions=[count(1)])
++- Exchange hashpartitioning(DEST_COUNTRY_NAME#182, 5)
++- *HashAggregate(keys=[DEST_COUNTRY_NAME#182], functions=[partial_count(1)])
++- *FileScan csv [DEST_COUNTRY_NAME#182] ...
+
+
+Let’s pull out some interesting statistics from our data. One thing to understand is that
+DataFrames (and SQL) in Spark already have a huge number of manipulations available.
+
+We will use the "max" function, to establish the maximum number of flights to and from any
+given location. This just scans each value in the relevant column in the DataFrame and checks
+whether it’s greater than the previous values that have been seen. This is a transformation,
+because we are effectively filtering down to one row.
+
+>>>> spark.sql("SELECT max(count) from flight_data_2015").take(1)
+
+# in Python
+>>>> from pyspark.sql.functions import max
+>>>> flightData2015.select(max("count")).take(1)
+
+
+Let’s perform something a bit more
+complicated and find the top five destination countries in the data. This is our first multitransformation query,
+so we’ll take it step by step. Let’s begin with a fairly straightforward SQL aggregation:
+
+# in Python
+>>>> maxSql = spark.sql("""
+>>>> SELECT DEST_COUNTRY_NAME, sum(count) as destination_total
+>>>> FROM flight_data_2015
+>>>> GROUP BY DEST_COUNTRY_NAME
+>>>> ORDER BY sum(count) DESC
+>>>> LIMIT 5 """)
+
+>>>> maxSql.show()
++-----------------+-----------------+
+|DEST_COUNTRY_NAME|destination_total|
++-----------------+-----------------+
+| United States| 411352|
+| Canada| 8399|
+| Mexico| 7140|
+| United Kingdom| 2025|
+| Japan| 1548|
++-----------------+-----------------+
+
+
+Now, let’s move to the DataFrame syntax that is semantically similar but slightly different in
+implementation and ordering
+
+# in Python
+>>>> from pyspark.sql.functions import desc
+>>>> flightData2015\
+>>>> .groupBy("DEST_COUNTRY_NAME")\
+>>>> .sum("count")\
+>>>> .withColumnRenamed("sum(count)", "destination_total")\
+>>>> .sort(desc("destination_total"))\
+>>>> .limit(5)\
+>>>> .show()
++-----------------+-----------------+
+|DEST_COUNTRY_NAME|destination_total|
++-----------------+-----------------+
+| United States| 411352|
+| Canada| 8399|
+| Mexico| 7140|
+| United Kingdom| 2025|
+| Japan| 1548|
++-----------------+-----------------+
+
+
+NOTE-- The execution plan is a directed acyclic graph (DAG) of transformations, each resulting in a new immutable DataFrame, on which we call an action to generate a result.
+
+
+
+CHAPTER 3 -- A Tour of Spark’s Toolset
+
+Building blocks of Apache Spark’s vast ecosystem of tools and libraries. 
+
+Spark is composed of these primitives—the lower-level APIs (RDD, Distributed Variables) 
+and the Structured APIs (Datasets, Dataframes, SQL)—and then a series of standard
+libraries (Structural Streaming, Advanced Analytics, Libraries & Ecosystem) for additional functionality.
