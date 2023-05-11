@@ -563,7 +563,7 @@ We discussed that a DataFame will have columns, and we use a schema to define th
 take a look at the schema on our current DataFrame:
 
 >>>> df.printSchema()
-Schemas tie everything together, so they’re worth belaboring.Let’s create a DataFrame with which we can work:
+Schemas tie everything together, so they’re worth belaboring. Let’s create a DataFrame with which we can work:
 
 Schemas-
 
@@ -629,7 +629,7 @@ until we compare the column names with those we are maintaining in the catalog. 
 resolution happens in the analyzer phase, as discussed in Chapter 4.
 
 Explicit column references-
-If you need to refer to a specific DataFrame’s column, you can use the col method on the
+If you need to refer to a specific DataFrame’s column, you can use the "col" method on the
 specific DataFrame. This can be useful when you are performing a join and need to refer to a
 specific column in one DataFrame that might share a name with another column in the joined
 DataFrame. As an added benefit, Spark does not need to resolve
@@ -651,7 +651,7 @@ reference). In the simplest case, expr("someCol") is equivalent to col("someCol"
 Columns as Expressions-
 Columns provide a subset of expression functionality. If you use col() and want to perform
 transformations on that column, you must perform those on that column reference. When using
-an expression, the expr function can actually parse transformations and column references from
+an expression, the "expr" function can actually parse transformations and column references from
 a string and can subsequently be passed into further transformations. Let’s look at some
 examples.
 
@@ -988,6 +988,7 @@ the first argument to the string in the second argument:
 >>>> # in Python
 >>>> df.withColumnRenamed("DEST_COUNTRY_NAME", "dest").columns
 
+
 O/P: ... dest, ORIGIN_COUNTRY_NAME, count
 
 Reserved Characters and Keywords-
@@ -1236,3 +1237,2042 @@ df.orderBy(expr("count desc")).limit(6).show()
 
 -- in SQL
 SELECT * FROM dfTable ORDER BY count desc LIMIT 6
+
+
+
+CHAPTER 6- Working with Different Types of Data-
+
+This chapter covers building expressions, which are the bread and butter of Spark’s structured operations.
+
+We also review working with a variety of different kinds of data, including the following:
+Booleans
+Numbers
+Strings
+Dates and timestamps
+Handling null
+Complex types
+User-defined functions
+
+Where to Look for APIs-
+
+1. DataFrame (Dataset) Methods
+This is actually a bit of a trick because a DataFrame is just a Dataset of Row types, so you’ll
+actually end up looking at the Dataset methods. Refer ("https://spark.apache.org/docs/latest/api/scala/index.html#org.apache.spark.sql.Dataset")
+
+Dataset submodules like "DataFrameStatFunctions" and "DataFrameNaFunctions" have more
+methods that solve specific sets of problems. 
+"DataFrameStatFunctions" holds a variety of statistically related functions, 
+"DataFrameNaFunctions" refers to functions that are relevant when working with null data.
+
+2. Column Methods
+It holds a variety of general columnrelated methods like "alias" or "contain". Refer ("https://spark.apache.org/docs/latest/api/scala/index.html#org.apache.spark.sql.Column")
+
+"org.apache.spark.sql.functions" contains a variety of functions for a range of different data
+types. Often, you’ll see the entire package imported because they are used so frequently. Refer ("https://spark.apache.org/docs/latest/api/scala/index.html#org.apache.spark.sql.functions$")
+
+Let’s read in the DataFrame that we’ll be using for this analysis:
+
+>>>> # in Python
+>>>> df = spark.read.format("csv")\
+>>>> .option("header", "true")\
+>>>> .option("inferSchema", "true")\
+>>>> .load("/data/retail-data/by-day/2010-12-01.csv")
+>>>> df.printSchema()
+>>>> df.createOrReplaceTempView("dfTable")
+
+Here’s the result of the schema and a small sample of the data:
+"
+root
+|-- InvoiceNo: string (nullable = true)
+|-- StockCode: string (nullable = true)
+|-- Description: string (nullable = true)
+|-- Quantity: integer (nullable = true)
+|-- InvoiceDate: timestamp (nullable = true)
+|-- UnitPrice: double (nullable = true)
+|-- CustomerID: double (nullable = true)
+|-- Country: string (nullable = true)
+"
+
+"
++---------+---------+--------------------+--------+-------------------+----...
+|InvoiceNo|StockCode| Description|Quantity| InvoiceDate|Unit...
++---------+---------+--------------------+--------+-------------------+----...
+| 536365| 85123A|WHITE HANGING HEA...| 6|2010-12-01 08:26:00| ...
+| 536365| 71053| WHITE METAL LANTERN| 6|2010-12-01 08:26:00| ...
+...
+| 536367| 21755|LOVE BUILDING BLO...| 3|2010-12-01 08:34:00| ...
+| 536367| 21777|RECIPE BOX WITH M...| 4|2010-12-01 08:34:00| ...
++---------+---------+--------------------+--------+-------------------+----...
+"
+
+Converting to Spark Types-
+
+One thing you’ll see us do throughout this chapter is convert native types to Spark types. We do
+this by using the "lit" function. This function converts a type in another language to its correspnding Spark representation.
+
+>>> # in Python
+>>>> from pyspark.sql.functions import lit
+>>>> df.select(lit(5), lit("five"), lit(5.0))
+
+There’s no equivalent function necessary in SQL, so we can use the values directly:
+
+"
+-- in SQL
+SELECT 5, "five", 5.0
+"
+
+Working with Booleans-
+
+Booleans are essential when it comes to data analysis because they are the foundation for all
+filtering. 
+Boolean statements consist of four elements: "and", "or", "true", and "false". We can specify equality as well as
+less-than or greater-than:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import col
+>>>> df.where(col("InvoiceNo") != 536365)\
+>>>> .select("InvoiceNo", "Description")\
+>>>> .show(5, False)
+
+"
++---------+-----------------------------+
+|InvoiceNo|Description |
++---------+-----------------------------+
+|536366 |HAND WARMER UNION JACK |
+...
+|536367 |POPPY'S PLAYHOUSE KITCHEN |
++---------+-----------------------------+
+"
+
+Another option—and probably the cleanest—is to specify the predicate as an expression in a
+string. This is valid for Python. Note that this also gives you access to another way of
+expressing “does not equal”:
+
+>>>> df.where("InvoiceNo = 536365").show(5, false)
+>>>> df.where("InvoiceNo <> 536365").show(5, false)
+
+In Spark, you should always chain together and filters as a sequential filter.
+The reason is that even if Boolean statements are expressed serially (one after the other),
+Spark will flatten all of these filters into one statement and perform the filter at the same time,
+creating the "and" statement for us.
+Although you can specify your statements explicitly by using
+"and" if you like, they’re often easier to understand and to read if you specify them serially. "or"
+statements need to be specified in the same statement:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import instr
+>>>> priceFilter = col("UnitPrice") > 600
+>>>> descripFilter = instr(df.Description, "POSTAGE") >= 1
+>>>> df.where(df.StockCode.isin("DOT")).where(priceFilter | descripFilter).show()
+
+"
+-- in SQL
+SELECT * FROM dfTable WHERE StockCode in ("DOT") AND(UnitPrice > 600 OR
+instr(Description, "POSTAGE") >= 1)
+"
+
++---------+---------+--------------+--------+-------------------+---------+...
+|InvoiceNo|StockCode| Description|Quantity| InvoiceDate|UnitPrice|...
++---------+---------+--------------+--------+-------------------+---------+...
+| 536544| DOT|DOTCOM POSTAGE| 1|2010-12-01 14:32:00| 569.77|...
+| 536592| DOT|DOTCOM POSTAGE| 1|2010-12-01 17:06:00| 607.49|...
++---------+---------+--------------+--------+-------------------+---------+...
+
+
+Boolean expressions are not just reserved to filters. To filter a DataFrame, you can also just
+specify a Boolean column:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import instr
+>>>> DOTCodeFilter = col("StockCode") == "DOT"
+>>>> priceFilter = col("UnitPrice") > 600
+>>>> descripFilter = instr(col("Description"), "POSTAGE") >= 1
+>>>> df.withColumn("isExpensive", DOTCodeFilter & (priceFilter | descripFilter))\
+>>>> .where("isExpensive")\
+>>>> .select("unitPrice", "isExpensive").show(5)
+
+"
+-- in SQL
+SELECT UnitPrice, (StockCode = 'DOT' AND
+(UnitPrice > 600 OR instr(Description, "POSTAGE") >= 1)) as isExpensive
+FROM dfTable
+WHERE (StockCode = 'DOT' AND
+(UnitPrice > 600 OR instr(Description, "POSTAGE") >= 1))
+"
+
+Here, we did not need to specify our filter as an expression and we used a column name without any extra work.
+
+If you’re coming from a SQL background, all of these statements should seem quite familiar.
+Indeed, all of them can be expressed as a "where" clause. In fact, it’s often easier to just express
+filters as SQL statements than using the programmatic DataFrame interface and Spark SQL
+allows us to do this without paying any performance penalty. Like this-
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import expr
+>>>> df.withColumn("isExpensive", expr("NOT UnitPrice <= 250"))\
+>>>> .where("isExpensive")\
+>>>> .select("Description", "UnitPrice").show(5)
+
+
+Working with Numbers-
+To fabricate a contrived example, let’s imagine that we found out that we mis-recorded the
+quantity in our retail dataset and the true quantity is equal to (the current quantity * the unit
+price) + 5. This will introduce our first numerical function as well as the pow function that raises
+a column to the expressed power:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import expr, pow
+>>>> fabricatedQuantity = pow(col("Quantity") * col("UnitPrice"), 2) + 5
+>>>> df.select(expr("CustomerId"), fabricatedQuantity.alias("realQuantity")).show(2)
+
++----------+------------------+
+2
+|CustomerId| realQuantity|
++----------+------------------+
+| 17850.0|239.08999999999997|
+| 17850.0| 418.7156|
++----------+------------------+
+
+In fact, we can do all of this as a SQL
+expression, as well:
+
+>>>> # in Python
+>>>> df.selectExpr(
+>>>> "CustomerId",
+>>>> "(POWER((Quantity * UnitPrice), 2.0) + 5) as realQuantity").show(2)
+
+"
+-- in SQL
+SELECT customerId, (POWER((Quantity * UnitPrice), 2.0) + 5) as realQuantity
+FROM dfTable
+"
+
+Another common numerical task is rounding. By default, the "round" function rounds up if you’re exactly in between two numbers. You can
+round down by using the "bround":
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import lit, round, bround
+>>>> df.select(round(lit("2.5")), bround(lit("2.5"))).show(2)
+
+"
+-- in SQL
+SELECT round(2.5), bround(2.5)
+"
+
++-------------+--------------+
+|round(2.5, 0)|bround(2.5, 0)|
++-------------+--------------+
+| 3.0| 2.0|
+| 3.0| 2.0|
++-------------+--------------+
+
+Another numerical task is to compute the correlation of two columns. For example, we can see
+the Pearson correlation coefficient for two columns to see if cheaper things are typically bought
+in greater quantities.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import corr
+>>>> df.stat.corr("Quantity", "UnitPrice")		## Method 1
+>>>> df.select(corr("Quantity", "UnitPrice")).show()		## Method 2
+
+"
+-- in SQL
+SELECT corr(Quantity, UnitPrice) FROM dfTable
++-------------------------+
+|corr(Quantity, UnitPrice)|
++-------------------------+
+| -0.04112314436835551|
++-------------------------+
+"
+
+Another common task is to compute summary statistics for a column or set of columns. We can
+use the "describe" method to achieve exactly this.
+
+>>>> # in Python
+>>>> df.describe().show()
+
++-------+------------------+------------------+------------------+
+|summary| Quantity| UnitPrice| CustomerID|
+
++-------+------------------+------------------+------------------+
+| count| 3108| 3108| 1968|
+| mean| 8.627413127413128| 4.151946589446603|15661.388719512195|
+| stddev|26.371821677029203|15.638659854603892|1854.4496996893627|
+| min| -24| 0.0| 12431.0|
+| max| 600| 607.49| 18229.0|
++-------+------------------+------------------+------------------+
+
+If you need these exact numbers, you can also perform this as an aggregation yourself by
+importing the functions and applying them to the columns that you need:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import count, mean, stddev_pop, min, max
+
+There are a number of statistical functions available in the StatFunctions Package (accessible
+using "stat" as we see in the code block below). These are DataFrame methods that you can use
+to calculate a variety of different things. For instance, you can calculate either exact or
+approximate quantiles of your data using the "approxQuantile" method:
+
+>>>> # in Python
+>>>> colName = "UnitPrice"
+>>>> quantileProbs = [0.5]
+>>>> relError = 0.05
+>>>> df.stat.approxQuantile("UnitPrice", quantileProbs, relError) # 2.51
+
+You also can use this to see a cross-tabulation or frequent item pairs (be careful, this output will
+be large and is omitted for this reason):
+
+>>>> # in Python
+>>>> df.stat.crosstab("StockCode", "Quantity").show()
+
+>>>> # in Python
+>>>> df.stat.freqItems(["StockCode", "Quantity"]).show()
+
+we can also add a unique ID to each row by using the function
+"monotonically_increasing_id". This function generates a unique value for each row, starting
+with 0:
+
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import monotonically_increasing_id
+>>>> df.select(monotonically_increasing_id()).show(2)
+
+
+Working with Strings-
+
+String manipulation shows up in nearly every data flow, and it’s worth explaining what you can
+do with strings. You might be manipulating log files performing regular expression extraction or
+substitution, or checking for simple string existence, or making all strings uppercase or
+lowercase.
+
+The "initcap" function will capitalize every word in a given string when that word is separated from another by a space.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import initcap
+>>>> df.select(initcap(col("Description"))).show()
+
+"
+-- in SQL
+SELECT initcap(Description) FROM dfTable
+"
+
++----------------------------------+
+|initcap(Description) |
++----------------------------------+
+|White Hanging Heart T-light Holder|
+|White Metal Lantern |
++----------------------------------+
+
+As just mentioned, you can cast strings in uppercase and lowercase, as well:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import lower, upper
+>>>> df.select(col("Description"),lower(col("Description")),upper(lower(col("Description")))).show(2)
+
+"
+-- in SQL
+SELECT Description, lower(Description), Upper(lower(Description)) FROM dfTable
+"
+
++--------------------+--------------------+-------------------------+
+| Description| lower(Description)|upper(lower(Description))|
++--------------------+--------------------+-------------------------+
+|WHITE HANGING HEA...|white hanging hea...| WHITE HANGING HEA...|
+| WHITE METAL LANTERN| white metal lantern| WHITE METAL LANTERN|
++--------------------+--------------------+-------------------------+
+
+Another trivial task is adding or removing spaces around a string. 
+You can do this by using "lpad", "ltrim", "rpad" and "rtrim", "trim"
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import lit, ltrim, rtrim, rpad, lpad, trim
+>>>> df.select(
+>>>> ltrim(lit(" HELLO ")).alias("ltrim"),
+>>>> rtrim(lit(" HELLO ")).alias("rtrim"),
+>>>> trim(lit(" HELLO ")).alias("trim"),
+>>>> lpad(lit("HELLO"), 3, " ").alias("lp"),
+>>>> rpad(lit("HELLO"), 10, " ").alias("rp")).show(2)
+
+-- in SQL
+SELECT
+ltrim(' HELLLOOOO '),
+rtrim(' HELLLOOOO '),
+trim(' HELLLOOOO '),
+lpad('HELLOOOO ', 3, ' '),
+rpad('HELLOOOO ', 10, ' ')
+FROM dfTable
+
++---------+---------+-----+---+----------+
+| ltrim| rtrim| trim| lp| rp|
++---------+---------+-----+---+----------+
+|HELLO | HELLO|HELLO| HE|HELLO |
+|HELLO | HELLO|HELLO| HE|HELLO |
++---------+---------+-----+---+----------+
+
+Note that if "lpad" or "rpad" takes a number less than the length of the string, it will always remove
+values from the right side of the string.
+
+
+Regular Expressions-
+
+Regular Expressions are most frequently performed tasks for searching the existence of one string
+in another or replacing all mentions of a string with another value. It gives
+the user an ability to specify a set of rules to use to either extract values from a string or replace
+them with some other values.
+
+There are two key functions in Spark that you’ll need in
+order to perform regular expression tasks: "regexp_extract" and "regexp_replace". These functions extract values and replace values, respectively.
+
+Let’s explore how to use the "regexp_replace" function to replace substitute color names in our
+description column:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import regexp_replace
+>>>> regex_string = "BLACK|WHITE|RED|GREEN|BLUE"
+>>>> df.select(
+>>>> regexp_replace(col("Description"), regex_string, "COLOR").alias("color_clean"),col("Description")).show(2)
+
+-- in SQL
+SELECT
+regexp_replace(Description, 'BLACK|WHITE|RED|GREEN|BLUE', 'COLOR') as
+color_clean, Description
+FROM dfTable
+
++--------------------+--------------------+
+| color_clean| Description|
++--------------------+--------------------+
+|COLOR HANGING HEA...|WHITE HANGING HEA...|
+| COLOR METAL LANTERN| WHITE METAL LANTERN|
++--------------------+--------------------+
+
+Another task might be to replace given characters with other characters. Building this as a
+regular expression could be tedious, so Spark also provides the "translate" function to replace these
+values. This is done at the character level and will replace all instances of a character with the
+indexed character in the replacement string:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import translate
+>>>> df.select(translate(col("Description"), "LEET", "1337"),col("Description")).show(2)
+
+-- in SQL
+SELECT translate(Description, 'LEET', '1337'), Description FROM dfTable
+
++----------------------------------+--------------------+
+|translate(Description, LEET, 1337)| Description|
++----------------------------------+--------------------+
+| WHI73 HANGING H3A...|WHITE HANGING HEA...|
+| WHI73 M37A1 1AN73RN| WHITE METAL LANTERN|
++----------------------------------+--------------------+
+
+We can also perform something similar, like pulling out the first mentioned color:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import regexp_extract
+>>>> extract_str = "(BLACK|WHITE|RED|GREEN|BLUE)"
+>>>> df.select(regexp_extract(col("Description"), extract_str, 1).alias("color_clean"),col("Description")).show(2)
+
+-- in SQL
+SELECT regexp_extract(Description, '(BLACK|WHITE|RED|GREEN|BLUE)', 1),
+Description
+FROM dfTable
+
++-------------+--------------------+
+| color_clean| Description|
++-------------+--------------------+
+| WHITE|WHITE HANGING HEA...|
+| WHITE| WHITE METAL LANTERN|
++-------------+--------------------+
+
+Sometimes, rather than extracting values, we simply want to check for their existence. We can do
+this with the "instr" method on each column. This will return a Boolean declaring whether the
+value you specify is in the column’s string:
+
+In Python and SQL, we can do it like:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import instr
+>>>> containsBlack = instr(col("Description"), "BLACK") >= 1
+>>>> containsWhite = instr(col("Description"), "WHITE") >= 1
+>>>> df.withColumn("hasSimpleColor", containsBlack | containsWhite)\
+>>>> .where("hasSimpleColor")\
+>>>> .select("Description").show(3, False)
+
+-- in SQL
+SELECT Description FROM dfTable
+WHERE instr(Description, 'BLACK') >= 1 OR instr(Description, 'WHITE') >= 1
++----------------------------------+
+|Description |
++----------------------------------+
+|WHITE HANGING HEART T-LIGHT HOLDER|
+|WHITE METAL LANTERN |
+|RED WOOLLY HOTTIE WHITE HEART. |
++----------------------------------+
+
+
+Let’s work through this in a more rigorous way and take advantage of Spark’s ability to accept a dynamic number of arguments. 
+When we convert a list of values into a set of arguments and pass them into a function, we use a language feature called "varargs". 
+Using this feature, we can
+effectively unravel an array of arbitrary length and pass it as arguments to a function. This,
+coupled with "select" makes it possible for us to create arbitrary numbers of columns
+dynamically.
+
+We can also do this quite easily in Python. In this case, we’re going to use a different function,
+"locate", that returns the integer location (1 based location). We then convert that to a Boolean
+before using it as the same basic feature:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import expr, locate
+>>>> simpleColors = ["black", "white", "red", "green", "blue"]
+>>>> def color_locator(column, color_string):
+>>>> 	return locate(color_string.upper(), column).cast("boolean").alias("is_" + c)
+>>>>
+>>>> selectedColumns = [color_locator(df.Description, c) for c in simpleColors]
+>>>> selectedColumns.append(expr("*")) # has to a be Column type
+>>>> df.select(*selectedColumns).where(expr("is_white OR is_red")).select("Description").show(3, False)
+
+This simple feature can often help you programmatically generate columns or Boolean filters in a
+way that is simple to understand and extend. We could extend this to calculating the smallest
+common denominator for a given input value, or whether a number is a prime.
+
+
+Working with Dates and Timestamps-
+
+Spark, as we saw with our current dataset, will make a best effort to
+correctly identify column types, including dates and timestamps when we enable "inferSchema".
+Working with dates and timestamps closely relates to working with strings
+because we often store our timestamps or dates as strings and convert them into date types at
+runtime. This is less common when working with databases and structured data but much more
+common when we are working with text and CSV files.
+
+Although Spark will do read dates or times on a best-effort basis. However, sometimes there will
+be no getting around working with strangely formatted dates and times.
+
+The key to understanding the transformations that you are going to need to apply is to ensure that you know
+exactly what type and format you have at each given step of the way. Spark’s "TimestampType" class supports only second-level precision, which means that if
+you’re going to be working with milliseconds or microseconds, you’ll need to work around this
+problem by potentially operating on them as "longs". Any more precision when coercing to a
+TimestampType will be removed.
+
+Let’s begin with the basics and get the current date and the current timestamps:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import current_date, current_timestamp
+>>>> dateDF = spark.range(10)\
+>>>> .withColumn("today", current_date())\
+>>>> .withColumn("now", current_timestamp())
+>>>> dateDF.createOrReplaceTempView("dateTable")
+>>>> dateDF.printSchema()
+
+root
+|-- id: long (nullable = false)
+|-- today: date (nullable = false)
+|-- now: timestamp (nullable = false)
+
+
+Now that we have a simple DataFrame to work with, let’s add and subtract five days from today.
+These functions take a column and then the number of days to either add or subtract as the
+arguments:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import date_add, date_sub
+>>>> dateDF.select(date_sub(col("today"), 5), date_add(col("today"), 5)).show(1)
+
+-- in SQL
+SELECT date_sub(today, 5), date_add(today, 5) FROM dateTable
+
++------------------+------------------+
+|date_sub(today, 5)|date_add(today, 5)|
++------------------+------------------+
+| 2017-06-12| 2017-06-22|
++------------------+------------------+
+
+"datediff" function that will return the number of days in between two dates. "months_between" gives you the number of months between two dates.
+
+
+# in Python
+from pyspark.sql.functions import datediff, months_between, to_date
+dateDF.withColumn("week_ago", date_sub(col("today"), 7))\
+.select(datediff(col("week_ago"), col("today"))).show(1)
+dateDF.select(
+to_date(lit("2016-01-01")).alias("start"),
+to_date(lit("2017-05-22")).alias("end"))\
+.select(months_between(col("start"), col("end"))).show(1)
+-- in SQL
+SELECT to_date('2016-01-01'), months_between('2016-01-01', '2017-01-01'),
+datediff('2016-01-01', '2017-01-01')
+FROM dateTable
++-------------------------+
+|datediff(week_ago, today)|
++-------------------------+
+| -7|
++-------------------------+
++--------------------------+
+|months_between(start, end)|
++--------------------------+
+| -16.67741935|
+
+
+The "to_date" function allows you to convert a string to a date.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import to_date, lit
+>>>> spark.range(5).withColumn("date", lit("2017-01-01")).select(to_date(col("date"))).show(1)
+
+Spark will not throw an error if it cannot parse the date; rather, it will just return null.
+For this, let’s take a look at the date format that has switched from year-
+month-day to year-day-month. Spark will fail to parse this date and silently return "null" instead:
+
+>>>> dateDF.select(to_date(lit("2016-20-12")),to_date(lit("2017-12-11"))).show(1)
+
++-------------------+-------------------+
+|to_date(2016-20-12)|to_date(2017-12-11)|
++-------------------+-------------------+
+| null| 2017-12-11|
++-------------------+-------------------+
+
+We find this to be an especially tricky situation for bugs because some dates might match the
+correct format, whereas others do not. Let’s fix this pipeline, step by step, and come up with a robust way to avoid these issues entirely.
+The first step is to remember that we need to specify our date format according to the Java
+SimpleDateFormat standard [https://docs.oracle.com/javase/8/docs/api/java/text/SimpleDateFormat.html].
+
+We will use two functions to fix this: "to_date" and "to_timestamp".
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import to_date
+>>>> dateFormat = "yyyy-dd-MM"
+>>>> cleanDateDF = spark.range(1).select(
+>>>> to_date(lit("2017-12-11"), dateFormat).alias("date"),
+>>>> to_date(lit("2017-20-12"), dateFormat).alias("date2"))
+>>>> cleanDateDF.createOrReplaceTempView("dateTable2")
+
+-- in SQL
+SELECT to_date(date, 'yyyy-dd-MM'), to_date(date2, 'yyyy-dd-MM'), to_date(date)
+FROM dateTable2
+
++----------+----------+
+| date| date2|
++----------+----------+
+|2017-11-12|2017-12-20|
++----------+----------+
+
+Now let’s use an example of "to_timestamp", which always requires a format to be specified:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import to_timestamp
+>>>> dateFormat = "yyyy-dd-MM"
+>>>> cleanDateDF.select(to_timestamp(col("date"), dateFormat)).show()
+
+-- in SQL
+SELECT to_timestamp(date, 'yyyy-dd-MM'), to_timestamp(date2, 'yyyy-dd-MM')
+FROM dateTable2
+
++----------------------------------+
+|to_timestamp(`date`, 'yyyy-dd-MM')|
++----------------------------------+
+| 2017-11-12 00:00:00|
++----------------------------------+
+ 
+After we have our date or timestamp in the correct format and type, comparing between them is
+actually quite easy. We just need to be sure to either use a date/timestamp type or specify our
+string according to the right format of yyyy-MM-dd if we’re comparing a date:
+
+>>>> cleanDateDF.filter(col("date2") > lit("2017-12-12")).show()
+
+One minor point is that we can also set this as a string, which Spark parses to a literal:
+
+>>>> cleanDateDF.filter(col("date2") > "'2017-12-12'").show()
+
+
+Working with Nulls in Data-
+
+You should always use nulls to represent missing or empty data in your
+DataFrames. Spark can optimize working with null values more than it can if you use empty
+strings or other values.
+
+Use the ".na" subpackage on a DataFrame for interacting with null values.
+
+There are two things you can do with null values: you can explicitly drop nulls or you can fill
+them with a value (globally or on a per-column basis). Let’s experiment with each of these now.
+
+
+Coalesce-
+Spark includes a function to allow you to select the first non-null value from a set of columns by
+using the coalesce function. 
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import coalesce
+>>>> df.select(coalesce(col("Description"), col("CustomerId"))).show()
+
+
+ifnull, nullIf, nvl, and nvl2-
+There are several other SQL functions that you can use to achieve similar things.
+"ifnull" allows you to select the second value if the first is null, and defaults to the first.
+
+"nullif" returns null if the two values are equal or else returns the second if they are not.
+
+"nvl" returns the second value if the first is null, but defaults to the first.
+
+"nvl2" returns the second value if the first is not null; otherwise, it will return the last specified value.
+
+-- in SQL
+SELECT
+ifnull(null, 'return_value'),
+nullif('value', 'value'),
+nvl(null, 'return_value'),
+nvl2('not_null', 'return_value', "else_value")
+FROM dfTable LIMIT 1
+
++------------+----+------------+------------+
+| a| b| c| d|
++------------+----+------------+------------+
+|return_value|null|return_value|return_value|
++------------+----+------------+------------+
+
+Naturally, we can use these in select expressions on DataFrames, as well.
+
+
+drop-
+
+"drop" removes rows that contain nulls. The default is to drop row in which any value is null:
+
+>>>> df.na.drop()
+>>>> df.na.drop("any")  	# Specifying "any" as an argument drops a row if any of the values are null
+
+In SQL, we have to do this column by column:
+
+-- in SQL
+SELECT * FROM dfTable WHERE Description IS NOT NULL
+
+
+>>>> df.na.drop("all") 		# Using “all” drops the row only if all values are null or NaN for that row
+
+We can also apply this to certain sets of columns by passing in an array of columns:
+>>>> # in Python
+>>>> df.na.drop("all", subset=["StockCode", "InvoiceNo"])
+
+
+fill-
+Using the "fill" function, you can fill one or more columns with a set of values.
+
+For example, to fill all null values in columns of type String, you might specify the following:
+>>>> df.na.fill("All Null values become this string")
+
+We could do the same for columns of type Integer by using df.na.fill(5:Integer), or for
+Doubles df.na.fill(5:Double).To specify columns, we just pass in an array of column names like we did in the previous example:
+>>>> # in Python
+>>>> df.na.fill("all", subset=["StockCode", "InvoiceNo"])
+
+>>>> # in Python
+>>>> fill_cols_vals = {"StockCode": 5, "Description" : "No Value"}
+>>>> df.na.fill(fill_cols_vals)
+
+
+replace-
+The most common use case is to replace all values in a certain column according to their current value.
+
+>>>> # in Python
+>>>> df.na.replace([""], ["UNKNOWN"], "Description")
+
+
+Ordering-
+As we discussed in Chapter 5, you can use "asc_nulls_first", "desc_nulls_first",
+"asc_nulls_last", or "desc_nulls_last" to specify where you would like your null values to
+appear in an ordered DataFrame.
+
+
+Working with Complex Types-
+Complex types can help you organize and structure your data in ways that make more sense for
+the problem that you are hoping to solve. 
+There are three kinds of complex types: structs, arrays and maps
+
+
+Structs-
+You can think of structs as DataFrames within DataFrames.
+
+We can create a struct by wrapping a set of columns in parenthesis in a query:
+
+>>>> df.selectExpr("(Description, InvoiceNo) as complex", "*")
+>>>> df.selectExpr("struct(Description, InvoiceNo) as complex", "*")
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import struct
+>>>> complexDF = df.select(struct("Description", "InvoiceNo").alias("complex"))
+>>>> complexDF.createOrReplaceTempView("complexDF")
+
+
+We now have a DataFrame with a column complex. We can query it just as we might another
+DataFrame, the only difference is that we use a dot syntax to do so, or the column method "getField":
+
+>>>> complexDF.select("complex.Description")
+>>>> complexDF.select(col("complex").getField("Description")
+
+We can also query all values in the struct by using "*". This brings up all the columns to the toplevel DataFrame:
+
+>>>> complexDF.select("complex.*")
+
+-- in SQL
+SELECT complex.* FROM complexDF
+
+
+Arrays-
+
+To define arrays, let’s work through a use case. With our current data, our objective is to take
+every single word in our [Description] column and convert that into a row in our DataFrame.
+The first task is to turn our [Description] column into a complex type, an array.
+
+split-
+We do this by using the split function and specify the delimiter:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import split
+>>>> df.select(split(col("Description"), " ")).show(2)
+
+-- in SQL
+SELECT split(Description, ' ') FROM dfTable
+
++---------------------+
+|split(Description, )|
++---------------------+
+| [WHITE, HANGING, ...|
+| [WHITE, METAL, LA...|
++---------------------+
+
+
+We can also query the values of the array using Python-like syntax:
+
+>>>> # in Python
+>>>> df.select(split(col("Description"), " ").alias("array_col")).selectExpr("array_col[0]").show(2)
+
+-- in SQL
+SELECT split(Description, ' ')[0] FROM dfTable
+
+This gives us the following result:
++------------+
+|array_col[0]|
++------------+
+| WHITE|
+| WHITE|
++------------+
+
+
+Array Length-
+We can determine the array’s length by querying for its size:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import size
+>>>> df.select(size(split(col("Description"), " "))).show(2) # shows 5 and 3
+
+
+array_contains-
+We can also see whether this array contains a value:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import array_contains
+>>>> df.select(array_contains(split(col("Description"), " "), "WHITE")).show(2)
+
+-- in SQL
+SELECT array_contains(split(Description, ' '), 'WHITE') FROM dfTable
+
+This gives us the following result:
++--------------------------------------------+
+|array_contains(split(Description, ), WHITE)|
++--------------------------------------------+
+| true|
+| true|
++--------------------------------------------+
+
+
+explode-
+The "explode" function takes a column that consists of arrays and creates one row (with the rest of
+the values duplicated) per value in the array.
+
+"Hello World", "Other Col" ---->(split)---->["Hello", "World"],"Other Col" -----> (explode) ----->"Hello", "Other Col", "World", "Other Col"
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import split, explode
+>>>> df.withColumn("splitted", split(col("Description"), " "))\
+>>>> .withColumn("exploded", explode(col("splitted")))\
+>>>> .select("Description", "InvoiceNo", "exploded").show(2)
+
+-- in SQL
+SELECT Description, InvoiceNo, exploded
+FROM (SELECT *, split(Description, " ") as splitted FROM dfTable)
+LATERAL VIEW explode(splitted) as exploded
+
+This gives us the following result:
++--------------------+---------+--------+
+| Description|InvoiceNo|exploded|
++--------------------+---------+--------+
+|WHITE HANGING HEA...| 536365| WHITE|
+|WHITE HANGING HEA...| 536365| HANGING|
++--------------------+---------+--------+
+
+
+To start from pg. no 115
+
+Maps-
+
+Maps are created by using the map function and key-value pairs of columns. You then can select
+them just like you might select from an array.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import create_map
+>>>> df.select(create_map(col("Description"), col("InvoiceNo")).alias("complex_map"))\
+>>>> .show(2)
+
+-- in SQL
+SELECT map(Description, InvoiceNo) as complex_map FROM dfTable
+WHERE Description IS NOT NULL
+
+This produces the following result:
++--------------------+
+| complex_map|
++--------------------+
+|Map(WHITE HANGING...|
+|Map(WHITE METAL L...|
++--------------------+
+You can query them by using the proper key. A missing key returns "null".
+
+
+>>>> # in Python
+>>>> df.select(map(col("Description"), col("InvoiceNo")).alias("complex_map"))\
+>>>> .selectExpr("complex_map['WHITE METAL LANTERN']").show(2)
+
+This gives us the following result:
++--------------------------------+
+|complex_map[WHITE METAL LANTERN]|
++--------------------------------+
+| null|
+| 536365|
++--------------------------------+
+
+You can also explode map types, which will turn them into columns:
+
+>>>> # in Python
+>>>> df.select(map(col("Description"), col("InvoiceNo")).alias("complex_map"))\
+>>>> .selectExpr("explode(complex_map)").show(2)
+
+This gives us the following result:
++--------------------+------+
+| key| value|
++--------------------+------+
+|WHITE HANGING HEA...|536365|
+| WHITE METAL LANTERN|536365|
++--------------------+------+
+
+
+Working with JSON-
+Spark has some unique support for working with JSON data. You can operate directly on strings
+of JSON in Spark and parse from JSON or extract JSON objects. Let’s begin by creating a JSON
+column:
+
+>>>> # in Python
+>>>> jsonDF = spark.range(1).selectExpr("""
+>>>> '{"myJSONKey" : {"myJSONValue" : [1, 2, 3]}}' as jsonString""")
+
+
+You can use the "get_json_object" to inline query a JSON object, be it a dictionary or array.
+You can use "json_tuple" if this object has only one level of nesting:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import get_json_object, json_tuple
+>>>> jsonDF.select(
+>>>> get_json_object(col("jsonString"), "$.myJSONKey.myJSONValue[1]") as "column",
+>>>> json_tuple(col("jsonString"), "myJSONKey")).show(2)
+
+Here’s the equivalent in SQL:
+
+jsonDF.selectExpr(
+"json_tuple(jsonString, '$.myJSONKey.myJSONValue[1]') as column").show(2)
+
+This results in the following table:
++------+--------------------+
+|column| c0|
++------+--------------------+
+| 2|{"myJSONValue":[1...|
++------+--------------------+
+
+You can also turn a StructType into a JSON string by using the "to_json" function.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import to_json
+>>>> df.selectExpr("(InvoiceNo, Description) as myStruct")\
+>>>> .select(to_json(col("myStruct")))
+
+
+This function also accepts a dictionary (map) of parameters that are the same as the JSON data
+source. You can use the from_json function to parse this (or other JSON data) back in.
+
+# in Python
+from pyspark.sql.functions import from_json
+from pyspark.sql.types import *
+parseSchema = StructType((
+StructField("InvoiceNo",StringType(),True),
+StructField("Description",StringType(),True)))
+df.selectExpr("(InvoiceNo, Description) as myStruct")\
+.select(to_json(col("myStruct")).alias("newJSON"))\
+.select(from_json(col("newJSON"), parseSchema), col("newJSON")).show(2)
+
+This gives us the following result:
++----------------------+--------------------+
+|jsontostructs(newJSON)| newJSON|
++----------------------+--------------------+
+| [536365,WHITE HAN...|{"InvoiceNo":"536...|
+| [536365,WHITE MET...|{"InvoiceNo":"536...|
++----------------------+--------------------+
+
+
+User-Defined Functions-
+
+These user-defined functions (UDFs) make it possible for you to write your own custom
+transformations using Python or Scala and even use external libraries.
+They’re just functions that operate on the data, record by record. By default, these functions 
+are registered as temporary functions to be used in that specific SparkSession or Context.
+
+Although you can write UDFs in Scala, Python, or Java, there are performance considerations
+that you should be aware of. To illustrate this, we’re going to walk through exactly what happens
+when you create UDF, pass that into Spark, and then execute code using that UDF.
+
+The first step is the actual function. We’ll create a simple one for this example. Let’s write a
+"power3" function that takes a number and raises it to a power of three:
+
+>>>> # in Python
+>>>> udfExampleDF = spark.range(5).toDF("num")
+>>>> def power3(double_value):
+>>>> return double_value ** 3
+>>>> power3(2.0)
+
+In this trivial example, we can see that our functions work as expected. We are able to provide an
+individual input and produce the expected result (with this simple test case). 
+Thus far, our expectations for the input are high: it must be a specific type and cannot be a null value
+
+Now that we’ve created these functions and tested them, we need to register them with Spark so
+that we can use them on all of our worker machines. Spark will serialize the function on the
+driver and transfer it over the network to all executor processes. This happens regardless of
+language.
+
+
+If the function is written in Python, Spark starts a Python
+process on the worker, serializes all of the data to a format that Python can understand
+(remember, it was in the JVM earlier), executes the function row by row on that data in the
+Python process, and then finally returns the results of the row operations to the JVM and Spark.
+
+First, we need to register the function to make it available as a DataFrame function:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import udf
+>>>> power3udf = udf(power3)
+
+Then, we can use it in our DataFrame code:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import col
+>>>> udfExampleDF.select(power3udf(col("num"))).show(2)
+
++-----------+
+|power3(num)|
++-----------+
+| 0|
+| 1|
++-----------+
+
+At this juncture, we can use this only as a DataFrame function. That is to say, we can’t use it
+within a string expression, only on an expression. However, we can also register this UDF as a
+Spark SQL function.
+
+Because this function is registered with Spark SQL—and we’ve learned that any Spark SQL
+function or expression is valid to use as an expression when working with DataFrames—we can
+turn around and use the UDF in Python.
+
+However, rather than using it as a DataFrame function, we use it as a SQL expression:
+
+>>>> # in Python
+>>>> udfExampleDF.selectExpr("power3(num)").show(2)
+
+We can also register our Python function to be available as a SQL function and use that in any
+language, as well.
+
+As we saw in the beginning of this section, Spark manages its own type information, which
+does not align exactly with Python’s types. Therefore, it’s a best practice to define the return type
+for your function when you define it. It is important to note that specifying the return type is not
+necessary, but it is a best practice.
+
+If you specify the type that doesn’t align with the actual type returned by the function, Spark will
+not throw an error but will just return "null" to designate a failure. You can see this if you were to
+switch the return type in the following function to be a DoubleType:
+
+>>>> # in Python
+>>>> from pyspark.sql.types import IntegerType, DoubleType
+>>>> spark.udf.register("power3py", power3, DoubleType())
+
+>>>> # in Python
+>>>> udfExampleDF.selectExpr("power3py(num)").show(2)
+>>>> # registered via Python
+
+This is because the range creates integers. When integers are operated on in Python, Python
+won’t convert them into floats (the corresponding type to Spark’s double type), therefore we see
+null. We can remedy this by ensuring that our Python function returns a float instead of an
+integer and the function will behave correctly.
+Naturally, we can use either of these from SQL, too, after we register them:
+
+-- in SQL
+SELECT power3(12), power3py(12) -- doesn't work because of return type
+
+When you want to optionally return a value from a UDF, you should return "None" in Python.
+
+_______________________NO IDEA__________________________________________________________________|
+                                                                                                |
+As a last note, you can also use UDF/UDAF creation via a Hive syntax. To allow for this, first	|
+you must enable Hive support when they create their SparkSession (via                           |
+SparkSession.builder().enableHiveSupport()). Then you can register UDFs in SQL. This		|
+is only supported with precompiled Scala and Java packages, so you’ll need to specify them as a |
+dependency:                                                                                     |
+-- in SQL                                                                                       |
+CREATE TEMPORARY FUNCTION myFunc AS 'com.organization.hive.udf.FunctionName'			|
+Additionally, you can register this as a permanent function in the Hive Metastore by removing	|
+TEMPORARY.											|
+________________________________________________________________________________________________|
+
+
+
+Chapter 7. Aggregations-
+
+
+
+Aggregating is the act of collecting something together and is a cornerstone of big data analytics.
+In an aggregation, you will specify a key or grouping and an aggregation function that specifies
+how you should transform one or more columns.
+
+In addition to working with any type of values, Spark also allows us to create the following
+groupings types:
+
+The simplest grouping is to just summarize a complete DataFrame by performing an
+aggregation in a select statement.
+
+A “group by” allows you to specify one or more keys as well as one or more
+aggregation functions to transform the value columns.
+
+A “window” gives you the ability to specify one or more keys as well as one or more
+aggregation functions to transform the value columns. However, the rows input to the
+function are somehow related to the current row.
+
+A “grouping set,” which you can use to aggregate at multiple different levels. Grouping
+sets are available as a primitive in SQL and via rollups and cubes in DataFrames.
+
+A “rollup” makes it possible for you to specify one or more keys as well as one or more
+aggregation functions to transform the value columns, which will be summarized
+hierarchically.
+
+A “cube” allows you to specify one or more keys as well as one or more aggregation
+functions to transform the value columns, which will be summarized across all
+combinations of columns.
+
+Each grouping returns a "RelationalGroupedDataset" on which we specify our aggregations.
+
+Lets read the data first
+
+>>>> # in Python
+>>>> df = spark.read.format("csv")\
+>>>> .option("header", "true")\
+>>>> .option("inferSchema", "true")\
+>>>> .load("/data/retail-data/all/*.csv")\
+>>>> .coalesce(5)
+>>>> df.cache()
+>>>> df.createOrReplaceTempView("dfTable")
+
+Here’s a sample of the data so that you can reference the output of some of the functions:
++---------+---------+--------------------+--------+--------------+---------+-----
+|InvoiceNo|StockCode| Description|Quantity| InvoiceDate|UnitPrice|Cu...
++---------+---------+--------------------+--------+--------------+---------+-----
+| 536365| 85123A|WHITE HANGING... | 6|12/1/2010 8:26| 2.55| ...
+| 536365| 71053|WHITE METAL... | 6|12/1/2010 8:26| 3.39| ...
+...
+| 536367| 21755|LOVE BUILDING BLO...| 3|12/1/2010 8:34| 5.95| ...
+| 536367| 21777|RECIPE BOX WITH M...| 4|12/1/2010 8:34| 7.95| ...
++---------+---------+--------------------+--------+--------------+---------+-----
+
+
+
+Aggregation Functions-
+
+You can find most aggregation functions in the "org.apache.spark.sql.functions" package.
+
+
+count-
+The first function worth going over is "count", except in this example it will perform as a
+transformation instead of an action. In this case, we can do one of two things: specify a specific
+column to count, or all the columns by using count(*) or count(1) to represent that we want to
+count every row as the literal one.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import count
+>>>> df.select(count("StockCode")).show() # 541909
+
+-- in SQL
+SELECT COUNT(*) FROM dfTable
+
+
+countDistinct-
+If the number of unique groups that you want. To get this number, you can use the "countDistinct" function.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import countDistinct
+>>>> df.select(countDistinct("StockCode")).show() # 4070
+
+-- in SQL
+SELECT COUNT(DISTINCT *) FROM DFTABLE
+
+
+approx_count_distinct-
+Often, we find ourselves working with large datasets and the exact distinct count is irrelevant.
+There are times when an approximation to a certain degree of accuracy will work just fine, and
+for that, you can use the "approx_count_distinct" function.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import approx_count_distinct
+>>>> df.select(approx_count_distinct("StockCode", 0.1)).show() # 3364
+
+-- in SQL
+SELECT approx_count_distinct(StockCode, 0.1) FROM DFTABLE
+
+You will notice that approx_count_distinct took another parameter with which you can
+specify the maximum estimation error allowed. In this case, we specified a rather large error and
+thus receive an answer that is quite far off but does complete more quickly than countDistinct.
+
+
+first and last-
+You can get the first and last values from a DataFrame by using these two obviously named
+functions.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import first, last
+>>>> df.select(first("StockCode"), last("StockCode")).show()
+
+-- in SQL
+SELECT first(StockCode), last(StockCode) FROM dfTable
++-----------------------+----------------------+
+|first(StockCode, false)|last(StockCode, false)|
++-----------------------+----------------------+
+| 85123A| 22138|
++-----------------------+----------------------+
+
+
+min and max-
+To extract the minimum and maximum values from a DataFrame, use the "min" and "max" functions:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import min, max
+>>>> df.select(min("Quantity"), max("Quantity")).show()
+
+-- in SQL
+SELECT min(Quantity), max(Quantity) FROM dfTable
+
++-------------+-------------+
+|min(Quantity)|max(Quantity)|
++-------------+-------------+
+| -80995| 80995|
++-------------+-------------+
+
+sum
+Another simple task is to add all the values in a row using the "sum" function:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import sum
+>>>> df.select(sum("Quantity")).show() # 5176450
+
+-- in SQL
+SELECT sum(Quantity) FROM dfTable
+
+
+sumDistinct-
+In addition to summing a total, you also can sum a distinct set of values by using the
+"sumDistinct" function:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import sumDistinct
+>>>> df.select(sumDistinct("Quantity")).show() # 29310
+
+-- in SQL
+SELECT SUM(Quantity) FROM dfTable -- 29310
+
+
+avg-
+Although you can calculate average by dividing "sum" by "count", Spark provides an easier way to
+get that value via the "avg" or "mean" functions.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import sum, count, avg, expr
+>>>> df.select(
+>>>> count("Quantity").alias("total_transactions"),
+>>>> sum("Quantity").alias("total_purchases"),
+>>>> avg("Quantity").alias("avg_purchases"),
+>>>> expr("mean(Quantity)").alias("mean_purchases")).selectExpr("total_purchases/total_transactions","avg_purchases","mean_purchases").show()
+
+
++--------------------------------------+----------------+----------------+
+|(total_purchases / total_transactions)| avg_purchases| mean_purchases|
++--------------------------------------+----------------+----------------+
+| 9.55224954743324|9.55224954743324|9.55224954743324|
++--------------------------------------+----------------+----------------+
+
+
+Variance and Standard Deviation-
+
+The variance is the average of the squared differences from the mean, and 
+the standard deviation is the square root of the variance. 
+These are fundamentally different statistical
+formulae, and we need to differentiate between them. Spark has both the formula for the sample standard deviation as well as
+the formula for the population standard deviation. By default, Spark performs the formula for
+the sample standard deviation or variance if you use the "variance" or "stddev" functions.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import var_pop, stddev_pop
+>>>> from pyspark.sql.functions import var_samp, stddev_samp
+>>>> df.select(var_pop("Quantity"), var_samp("Quantity"),
+>>>> stddev_pop("Quantity"), stddev_samp("Quantity")).show()
+
+-- in SQL
+SELECT var_pop(Quantity), var_samp(Quantity),
+stddev_pop(Quantity), stddev_samp(Quantity)
+FROM dfTable
+
++------------------+------------------+--------------------+-------------------+
+| var_pop(Quantity)|var_samp(Quantity)|stddev_pop(Quantity)|stddev_samp(Quan...|
++------------------+------------------+--------------------+-------------------+
+|47559.303646609056|47559.391409298754| 218.08095663447796| 218.081157850...|
++------------------+------------------+--------------------+-------------------+
+
+
+skewness and kurtosis-
+
+# in Python
+from pyspark.sql.functions import skewness, kurtosis
+df.select(skewness("Quantity"), kurtosis("Quantity")).show()
+
+-- in SQL
+SELECT skewness(Quantity), kurtosis(Quantity) FROM dfTable
+
++-------------------+------------------+
+| skewness(Quantity)|kurtosis(Quantity)|
++-------------------+------------------+
+|-0.2640755761052562|119768.05495536952|
++-------------------+------------------+
+
+Covariance and Correlation-
+We discussed single column aggregations, but some functions compare the interactions of the
+values in two difference columns together. Two of these functions are "cov" and "corr", for
+covariance and correlation.
+
+NOTE- Correlation measures the Pearson correlation coefficient, which is scaled between –1 and +1. The covariance is scaled according to the inputs in the data.
+
+Like the "var" function, covariance can be calculated either as the sample covariance or the
+population covariance. Therefore it can be important to specify which formula you want to use.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import corr, covar_pop, covar_samp
+>>>> df.select(corr("InvoiceNo", "Quantity"), covar_samp("InvoiceNo", "Quantity"),
+>>>> covar_pop("InvoiceNo", "Quantity")).show()
+
+-- in SQL
+SELECT corr(InvoiceNo, Quantity), covar_samp(InvoiceNo, Quantity),
+covar_pop(InvoiceNo, Quantity)
+FROM dfTable
++-------------------------+-------------------------------+---------------------+
+|corr(InvoiceNo, Quantity)|covar_samp(InvoiceNo, Quantity)|covar_pop(InvoiceN...|
++-------------------------+-------------------------------+---------------------+
+| 4.912186085635685E-4| 1052.7280543902734| 1052.7...|
++-------------------------+-------------------------------+---------------------+
+
+
+Aggregating to Complex Types-
+In Spark, you can perform aggregations not just of numerical values using formulas, you can also
+perform them on complex types. For example, we can collect a list of values present in a given
+column or only the unique values by collecting to a set.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import collect_set, collect_list
+>>>> df.agg(collect_set("Country"), collect_list("Country")).show()
+
+-- in SQL
+SELECT collect_set(Country), collect_set(Country) FROM dfTable
+
++--------------------+---------------------+
+|collect_set(Country)|collect_list(Country)|
++--------------------+---------------------+
+|[Portugal, Italy,...| [United Kingdom, ...|
++--------------------+---------------------+
+
+
+
+Grouping-
+
+A more common task is to perform calculations based on groups in the data. 
+This is typically done on categorical data for
+which we group our data on one column and perform some calculations on the other columns
+that end up in that group.
+
+The first will be a count, just as we did before
+
+df.groupBy("InvoiceNo", "CustomerId").count().show()
+
+
+-- in SQL
+SELECT count(*) FROM dfTable GROUP BY InvoiceNo, CustomerId
+
++---------+----------+-----+
+|InvoiceNo|CustomerId|count|
++---------+----------+-----+
+| 536846| 14573| 76|
+...
+| C544318| 12989| 1|
++---------+----------+-----+
+
+
+Grouping with Expressions-
+
+Rather than passing that function as an expression
+into a "select" statement, we specify it as within "agg". This makes it possible for you to pass-in
+arbitrary expressions that just need to have some aggregation specified.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import count
+>>>> df.groupBy("InvoiceNo").agg(
+>>>> count("Quantity").alias("quan"),
+>>>> expr("count(Quantity)")).show()
+
++---------+----+---------------+
+|InvoiceNo|quan|count(Quantity)|
++---------+----+---------------+
+| 536596| 6| 6|
+...
+| C542604| 8| 8|
++---------+----+---------------+
+
+
+Grouping with Maps-
+Sometimes, it can be easier to specify your transformations as a series of Maps for which the key
+is the column, and the value is the aggregation function (as a string) that you would like to
+perform. You can reuse multiple column names if you specify them inline, as well:
+
+>>>> # in Python
+>>>> df.groupBy("InvoiceNo").agg(expr("avg(Quantity)"),expr("stddev_pop(Quantity)"))\
+>>>> .show()
+
+-- in SQL
+SELECT avg(Quantity), stddev_pop(Quantity), InvoiceNo FROM dfTable
+GROUP BY InvoiceNo
+
++---------+------------------+--------------------+
+|InvoiceNo| avg(Quantity)|stddev_pop(Quantity)|
++---------+------------------+--------------------+
+| 536596| 1.5| 1.1180339887498947|
+...
+| C542604| -8.0| 15.173990905493518|
++---------+------------------+--------------------
+
+
+
+
+Window Functions-
+
+Spark supports three kinds of window functions: ranking functions, analytic functions,
+and aggregate functions.
+
+To demonstrate, we will add a date column that will convert our invoice date into a column that
+contains only date information (not time information, too):
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import col, to_date
+>>>> dfWithDate = df.withColumn("date", to_date(col("InvoiceDate"), "MM/d/yyyy H:mm"))
+>>>> dfWithDate.createOrReplaceTempView("dfWithDate")
+
+The first step to a window function is to create a window specification. Note that the "partition
+by" is unrelated to the partitioning scheme concept that we have covered thus far. It’s just a
+similar concept that describes how we will be breaking up our group. The ordering determines
+the ordering within a given partition, and, finally, the frame specification (the "rowsBetween"
+statement) states which rows will be included in the frame based on its reference to the current
+input row. In the following example, we look at all previous rows up to the current row:
+
+
+>>>> # in Python
+>>>> from pyspark.sql.window import Window
+>>>> from pyspark.sql.functions import desc
+>>>> windowSpec = Window\
+>>>> .partitionBy("CustomerId", "date")\
+>>>> .orderBy(desc("Quantity"))\
+>>>> .rowsBetween(Window.unboundedPreceding, Window.currentRow)
+
+
+Now we want to use an aggregation function to learn more about each specific customer. 
+For now, establishing the maximum purchase quantity over all time.
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import max
+>>>> maxPurchaseQuantity = max(col("Quantity")).over(windowSpec)
+
+
+You will notice that this returns a column (or expressions). We can now use this in a DataFrame
+select statement
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import dense_rank, rank
+>>>> purchaseDenseRank = dense_rank().over(windowSpec)
+>>>> purchaseRank = rank().over(windowSpec)
+
+This also returns a column that we can use in select statements. Now we can perform a select to
+view the calculated window values:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import col
+>>>> dfWithDate.where("CustomerId IS NOT NULL").orderBy("CustomerId")\
+>>>> .select(
+>>>> col("CustomerId"),
+>>>> col("date"),
+>>>> col("Quantity"),
+>>>> purchaseRank.alias("quantityRank"),
+>>>> purchaseDenseRank.alias("quantityDenseRank"),
+>>>> maxPurchaseQuantity.alias("maxPurchaseQuantity")).show()
+
+-- in SQL
+SELECT CustomerId, date, Quantity,
+rank(Quantity) OVER (PARTITION BY CustomerId, date
+ORDER BY Quantity DESC NULLS LAST
+ROWS BETWEEN
+UNBOUNDED PRECEDING AND
+CURRENT ROW) as rank,
+dense_rank(Quantity) OVER (PARTITION BY CustomerId, date
+ORDER BY Quantity DESC NULLS LAST
+ROWS BETWEEN
+UNBOUNDED PRECEDING AND
+CURRENT ROW) as dRank,
+max(Quantity) OVER (PARTITION BY CustomerId, date
+ORDER BY Quantity DESC NULLS LAST
+ROWS BETWEEN
+UNBOUNDED PRECEDING AND
+CURRENT ROW) as maxPurchase
+FROM dfWithDate WHERE CustomerId IS NOT NULL ORDER BY CustomerId
+
++----------+----------+--------+------------+-----------------+---------------+
+|CustomerId| date|Quantity|quantityRank|quantityDenseRank|maxP...Quantity|
++----------+----------+--------+------------+-----------------+---------------+
+| 12346|2011-01-18| 74215| 1| 1| 74215|
+| 12346|2011-01-18| -74215| 2| 2| 74215|
+| 12347|2010-12-07| 36| 1| 1| 36|
+| 12347|2010-12-07| 30| 2| 2| 36|
+...
+| 12347|2010-12-07| 12| 4| 4| 36|
+| 12347|2010-12-07| 6| 17| 5| 36|
+| 12347|2010-12-07| 6| 17| 5| 36|
++----------+----------+--------+------------+-----------------+---------------
+
+
+
+Grouping Sets-
+
+Sometimes we want something a bit
+more complete—an aggregation across multiple groups. We achieve this by using grouping sets.
+Grouping sets are a low-level tool for combining sets of aggregations together. They give you the
+ability to create arbitrary aggregation in their group-by statements.
+
+In below eg., we would like to get the
+total quantity of all stock codes and customers. To do so, we’ll use the following SQL
+expression:
+
+>>>> # in Python
+>>>> dfNoNull = dfWithDate.drop()
+>>>> dfNoNull.createOrReplaceTempView("dfNoNull")
+
+-- in SQL
+SELECT CustomerId, stockCode, sum(Quantity) FROM dfNoNull
+GROUP BY customerId, stockCode
+ORDER BY CustomerId DESC, stockCode DESC
+
++----------+---------+-------------+
+|CustomerId|stockCode|sum(Quantity)|
++----------+---------+-------------+
+| 18287| 85173| 48|
+| 18287| 85040A| 48|
+| 18287| 85039B| 120|
+...
+| 18287| 23269| 36|
++----------+---------+-------------+
+
+You can do the exact same thing by using a grouping set:
+
+-- in SQL
+SELECT CustomerId, stockCode, sum(Quantity) FROM dfNoNull
+GROUP BY customerId, stockCode GROUPING SETS((customerId, stockCode))
+ORDER BY CustomerId DESC, stockCode DESC
+
++----------+---------+-------------+
+|CustomerId|stockCode|sum(Quantity)|
++----------+---------+-------------+
+| 18287| 85173| 48|
+| 18287| 85040A| 48|
+| 18287| 85039B| 120|
+...
+| 18287| 23269| 36|
++----------+---------+-------------+
+
+Simple enough, but what if you also want to include the total number of items, regardless of
+customer or stock code? With a conventional group-by statement, this would be impossible. But,
+it’s simple with grouping sets: we simply specify that we would like to aggregate at that level, as
+well, in our grouping set. This is, effectively, the union of several different groupings together:
+
+-- in SQL
+SELECT CustomerId, stockCode, sum(Quantity) FROM dfNoNull
+GROUP BY customerId, stockCode GROUPING SETS((customerId, stockCode),())
+ORDER BY CustomerId DESC, stockCode DESC
+
++----------+---------+-------------+
+|customerId|stockCode|sum(Quantity)|
++----------+---------+-------------+
+| 18287| 85173| 48|
+| 18287| 85040A| 48|
+| 18287| 85039B| 120|
+...
+| 18287| 23269| 36|
++----------+---------+-------------+
+
+
+The GROUPING SETS operator is only available in SQL. To perform the same in DataFrames, you
+use the "rollup" and "cube" operators—which allow us to get the same results.
+
+
+Rollups-
+A rollup is a multidimensional aggregation that performs a variety of group-by style calculations
+for us.
+
+Let’s create a rollup-
+
+>>>> # in Python
+>>>> rolledUpDF = dfNoNull.rollup("Date", "Country").agg(sum("Quantity"))\
+>>>> .selectExpr("Date", "Country", "`sum(Quantity)` as total_quantity")\
+>>>> .orderBy("Date")
+>>>> rolledUpDF.show()
+
++----------+--------------+--------------+
+| Date| Country|total_quantity|
++----------+--------------+--------------+
+| null| null| 5176450|
+|2010-12-01|United Kingdom| 23949|
+|2010-12-01| Germany| 117|
+|2010-12-01| France| 449|
+...
+|2010-12-03| France| 239|
+|2010-12-03| Italy| 164|
+|2010-12-03| Belgium| 528|
++----------+--------------+--------------+
+
+Now where you see the null values is where you’ll find the grand totals. A null in both rollup
+columns specifies the grand total across both of those columns:
+
+>>>> rolledUpDF.where("Country IS NULL").show()
+>>>> rolledUpDF.where("Date IS NULL").show()
+
++----+-------+--------------+
+|Date|Country|total_quantity|
++----+-------+--------------+
+|null| null| 5176450|
++----+-------+--------------+
+
+
+
+Cube-
+A "cube" takes the "rollup" to a level deeper. Rather than treating elements hierarchically, a "cube"
+does the same thing across all dimensions.
+
+The method call is quite similar, but instead of calling rollup, we call cube:
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import sum
+>>>> dfNoNull.cube("Date", "Country").agg(sum(col("Quantity")))\
+>>>> .select("Date", "Country", "sum(Quantity)").orderBy("Date").show()
+
++----+--------------------+-------------+
+|Date| Country|sum(Quantity)|
++----+--------------------+-------------+
+|null| Japan| 25218|
+|null| Portugal| 16180|
+|null| Unspecified| 3300|
+|null| null| 5176450|
+|null| Australia| 83653|
+...
+|null| Norway| 19247|
+|null| Hong Kong| 4769|
+|null| Spain| 26824|
+|null| Czech Republic| 592|
++----+--------------------+-------------+
+
+This is a quick and easily accessible summary of nearly all of the information in our table, and
+it’s a great way to create a quick summary table that others can use later on.
+
+
+Pivot-
+Pivots make it possible for you to convert a row into a column. 
+
+>>>> # in Python
+>>>> pivoted = dfWithDate.groupBy("date").pivot("Country").sum()
+
+This DataFrame will now have a column for every combination of country, numeric variable,
+and a column specifying the date.
+
+For example, for USA we have the following columns:
+USA_sum(Quantity), USA_sum(UnitPrice), USA_sum(CustomerID). This represents one for
+each numeric column in our dataset (because we just performed an aggregation over all of them).
+Here’s an example query and result from this data.
+
+>>>> pivoted.where("date > '2011-12-05'").select("date" ,"`USA_sum(Quantity)`").show()
+
++----------+-----------------+
+| date|USA_sum(Quantity)|
++----------+-----------------+
+|2011-12-06| null|
+|2011-12-09| null|
+|2011-12-08| -196|
+|2011-12-07| null|
++----------+-----------------+
+
+
+
+
+
+
+CHAPTER 7 - Joins-
+
+
+Join Expressions-
+
+A join brings together two sets of data, the left and the right, by comparing the value of one or
+more keys of the left and right and evaluating the result of a join expression that determines
+whether Spark should bring together the left set of data with the right set of data. The most
+common join expression, an equi-join, compares whether the specified keys in your left and
+right datasets are equal.
+
+Join Types-
+
+Inner joins (keep rows with keys that exist in the left and right datasets)
+
+Outer joins (keep rows with keys in either the left or right datasets)
+
+Left outer joins (keep rows with keys in the left dataset)
+
+Right outer joins (keep rows with keys in the right dataset)
+
+Left semi joins (keep the rows in the left, and only the left, dataset where the key appears in the right dataset)
+
+Left anti joins (keep the rows in the left, and only the left, dataset where they do not appear in the right dataset)
+
+Natural joins (perform a join by implicitly matching the columns between the two datasets with the same names)
+
+Cross (or Cartesian) joins (match every row in the left dataset with every row in the right dataset)
+
+let’s create some simple datasets that we can use in our examples:
+
+>>>> # in Python
+>>>> person = spark.createDataFrame([
+>>>> (0, "Bill Chambers", 0, [100]),
+>>>> (1, "Matei Zaharia", 1, [500, 250, 100]),
+>>>> (2, "Michael Armbrust", 1, [250, 100])])\
+>>>> .toDF("id", "name", "graduate_program", "spark_status")
+
+>>>> graduateProgram = spark.createDataFrame([
+>>>> (0, "Masters", "School of Information", "UC Berkeley"),
+>>>> (2, "Masters", "EECS", "UC Berkeley"),
+>>>> (1, "Ph.D.", "EECS", "UC Berkeley")])\
+>>>> .toDF("id", "degree", "department", "school")
+
+>>>> sparkStatus = spark.createDataFrame([
+>>>> (500, "Vice President"),
+>>>> (250, "PMC Member"),
+>>>> (100, "Contributor")])\
+>>>> .toDF("id", "status")
+
+
+Next, let’s register these as tables so that we use them throughout the chapter:
+
+>>>> person.createOrReplaceTempView("person")
+>>>> graduateProgram.createOrReplaceTempView("graduateProgram")
+>>>> sparkStatus.createOrReplaceTempView("sparkStatus")
+
+
+Inner Joins-
+
+Inner joins evaluate the keys in both of the DataFrames or tables and include (and join together)
+only the rows that evaluate to true. Here, we join the graduateProgram
+DataFrame with the person DataFrame to create a new DataFrame:
+
+>>>> ## in Python
+>>>> joinExpression = person["graduate_program"] == graduateProgram['id']
+
+Keys that do not exist in both DataFrames will not show in the resulting DataFrame. For
+example, the following expression would result in zero values in the resulting DataFrame:
+
+>>>> wrongJoinExpression = person["name"] == graduateProgram["school"]
+
+Inner joins are the default join, so we just need to specify our left DataFrame and join the right in
+the JOIN expression:
+
+>>>> person.join(graduateProgram, joinExpression).show()
+
+-- in SQL
+SELECT * FROM person JOIN graduateProgram
+ON person.graduate_program = graduateProgram.id
+
++---+----------------+----------------+---------------+---+-------+----------+---
+| id| name|graduate_program| spark_status| id| degree|department|...
++---+----------------+----------------+---------------+---+-------+----------+---
+| 0| Bill Chambers| 0| [100]| 0|Masters| School...|...
+| 1| Matei Zaharia| 1|[500, 250, 100]| 1| Ph.D.| EECS|...
+| 2|Michael Armbrust| 1| [250, 100]| 1| Ph.D.| EECS|...
++---+----------------+----------------+---------------+---+-------+----------+---
+
+We can also specify this explicitly by passing in a third parameter, the joinType:
+
+>>>> # in Python
+>>>> joinType = "inner"
+>>>> person.join(graduateProgram, joinExpression, joinType).show()
+
+-- in SQL
+SELECT * FROM person INNER JOIN graduateProgram
+ON person.graduate_program = graduateProgram.id
+
++---+----------------+----------------+---------------+---+-------+--------------
+| id| name|graduate_program| spark_status| id| degree| department...
++---+----------------+----------------+---------------+---+-------+--------------
+| 0| Bill Chambers| 0| [100]| 0|Masters| School...
+| 1| Matei Zaharia| 1|[500, 250, 100]| 1| Ph.D.| EECS...
+| 2|Michael Armbrust| 1| [250, 100]| 1| Ph.D.| EECS...
++---+----------------+----------------+---------------+---+-------+--------------
+
+
+Outer Joins-
+
+Outer joins evaluate the keys in both of the DataFrames or tables and includes (and joins
+together) the rows that evaluate to true or false. If there is no equivalent row in either the left or
+right DataFrame, Spark will insert null:
+
+>>>> joinType = "outer"
+>>>> person.join(graduateProgram, joinExpression, joinType).show()
+
+-- in SQL
+SELECT * FROM person FULL OUTER JOIN graduateProgram
+ON graduate_program = graduateProgram.id
+
++----+----------------+----------------+---------------+---+-------+-------------
+| id| name|graduate_program| spark_status| id| degree| departmen...
++----+----------------+----------------+---------------+---+-------+-------------
+| 1| Matei Zaharia| 1|[500, 250, 100]| 1| Ph.D.| EEC...
+| 2|Michael Armbrust| 1| [250, 100]| 1| Ph.D.| EEC...
+|null| null| null| null| 2|Masters| EEC...
+| 0| Bill Chambers| 0| [100]| 0|Masters| School...
++----+----------------+----------------+---------------+---+-------+-------------
+
+
+Left Outer Joins-
+
+Left outer joins evaluate the keys in both of the DataFrames or tables and includes all rows from
+the left DataFrame as well as any rows in the right DataFrame that have a match in the left
+DataFrame. If there is no equivalent row in the RIGHT DataFrame, Spark will insert null:
+
+>>>> joinType = "left_outer"
+>>>> graduateProgram.join(person, joinExpression, joinType).show()
+
+-- in SQL
+SELECT * FROM graduateProgram LEFT OUTER JOIN person
+ON person.graduate_program = graduateProgram.id
+
++---+-------+----------+-----------+----+----------------+----------------+---
+| id| degree|department| school| id| name|graduate_program|...
++---+-------+----------+-----------+----+----------------+----------------+---
+| 0|Masters| School...|UC Berkeley| 0| Bill Chambers| 0|...
+| 2|Masters| EECS|UC Berkeley|null| null| null|...
+| 1| Ph.D.| EECS|UC Berkeley| 2|Michael Armbrust| 1|...
+| 1| Ph.D.| EECS|UC Berkeley| 1| Matei Zaharia| 1|...
++---+-------+----------+-----------+----+----------------+----------------+---
+
+
+Right Outer Joins-
+
+Right outer joins evaluate the keys in both of the DataFrames or tables and includes all rows
+from the right DataFrame as well as any rows in the left DataFrame that have a match in the right
+DataFrame. If there is no equivalent row in the left DataFrame, Spark will insert null:
+
+>>>> joinType = "right_outer"
+>>>> person.join(graduateProgram, joinExpression, joinType).show()
+
+-- in SQL
+SELECT * FROM person RIGHT OUTER JOIN graduateProgram
+ON person.graduate_program = graduateProgram.id
+
++----+----------------+----------------+---------------+---+-------+------------+
+| id| name|graduate_program| spark_status| id| degree| department|
++----+----------------+----------------+---------------+---+-------+------------+
+| 0| Bill Chambers| 0| [100]| 0|Masters|School of...|
+|null| null| null| null| 2|Masters| EECS|
+| 2|Michael Armbrust| 1| [250, 100]| 1| Ph.D.| EECS|
+| 1| Matei Zaharia| 1|[500, 250, 100]| 1| Ph.D.| EECS|
++----+----------------+----------------+---------------+---+-------+------------+
+
+
+Left Semi Joins-
+
+They do not actually include any values
+from the right DataFrame. They only compare values to see if the value exists in the second
+DataFrame. If the value does exist, those rows will be kept in the result, even if there are
+duplicate keys in the left DataFrame.
+
+joinType = "left_semi"
+graduateProgram.join(person, joinExpression, joinType).show()
+
++---+-------+--------------------+-----------+
+| id| degree| department| school|
++---+-------+--------------------+-----------+
+| 0|Masters|School of Informa...|UC Berkeley|
+| 1| Ph.D.| EECS|UC Berkeley|
++---+-------+--------------------+-----------+
+
+>>>> gradProgram2 = graduateProgram.union(spark.createDataFrame([
+>>>> (0, "Masters", "Duplicated Row", "Duplicated School")]))
+>>>> gradProgram2.createOrReplaceTempView("gradProgram2")
+>>>> gradProgram2.join(person, joinExpression, joinType).show()
+
+-- in SQL
+SELECT * FROM gradProgram2 LEFT SEMI JOIN person
+ON gradProgram2.id = person.graduate_program
+
++---+-------+--------------------+-----------------+
+| id| degree| department| school|
++---+-------+--------------------+-----------------+
+| 0|Masters|School of Informa...| UC Berkeley|
+| 1| Ph.D.| EECS| UC Berkeley|
+| 0|Masters| Duplicated Row|Duplicated School|
++---+-------+--------------------+-----------------+
+
+
+Left Anti Joins-
+
+Like left semi joins, they do not actually
+include any values from the right DataFrame. They only compare values to see if the value exists
+in the second DataFrame. However, rather than keeping the values that exist in the second
+DataFrame, they keep only the values that do not have a corresponding key in the second
+DataFrame
+
+>>>> joinType = "left_anti"
+>>>> graduateProgram.join(person, joinExpression, joinType).show()
+
+-- in SQL
+SELECT * FROM graduateProgram LEFT ANTI JOIN person
+ON graduateProgram.id = person.graduate_program
+
++---+-------+----------+-----------+
+| id| degree|department| school|
++---+-------+----------+-----------+
+| 2|Masters| EECS|UC Berkeley|
++---+-------+----------+-----------+
+
+
+Natural Joins-
+
+Natural joins make implicit guesses at the columns on which you would like to join. It finds
+matching columns and returns the results. Left, right, and outer natural joins are all supported.
+
++---+-------+----------+-----------+---+----------------+----------------+-------
+| id| degree|department| school| id| name|graduate_program|spar...
++---+-------+----------+-----------+---+----------------+----------------+-------
+| 0|Masters| School...|UC Berkeley| 0| Bill Chambers| 0| ...
+| 1| Ph.D.| EECS|UC Berkeley| 2|Michael Armbrust| 1| [2...
+| 1| Ph.D.| EECS|UC Berkeley| 1| Matei Zaharia| 1|[500...
++---+-------+----------+-----------+---+----------------+----------------+-------
+
+
+
+Cross (Cartesian Joins)-
+
+Cross-joins in simplest terms are inner
+joins that do not specify a predicate. Cross joins will join every single row in the left DataFrame
+to ever single row in the right DataFrame. This will cause an absolute explosion in the number of
+rows contained in the resulting DataFrame. If you have 1,000 rows in each DataFrame, the crossjoin of these will result in 1,000,000 (1,000 x 1,000) rows.
+
+>>>> joinType = "cross"
+>>>> graduateProgram.join(person, joinExpression, joinType).show()
+
+-- in SQL
+SELECT * FROM graduateProgram CROSS JOIN person
+ON graduateProgram.id = person.graduate_program
+
+If you truly intend to have a cross-join, you can call that out explicitly:
+
+>>>> person.crossJoin(graduateProgram).show()
+
+-- in SQL
+SELECT * FROM graduateProgram CROSS JOIN person
+
++---+----------------+----------------+---------------+---+-------+-------------+
+| id| name|graduate_program| spark_status| id| degree| departm...|
++---+----------------+----------------+---------------+---+-------+-------------+
+| 0| Bill Chambers| 0| [100]| 0|Masters| School...|
+...
+| 1| Matei Zaharia| 1|[500, 250, 100]| 0|Masters| School...|
+...
+| 2|Michael Armbrust| 1| [250, 100]| 0|Masters| School...|
+...
++---+----------------+----------------+---------------+---+-------+-------------+
+
+
+Challenges When Using Joins-
+
+1. Joins on Complex Types-
+Even though this might seem like a challenge, it’s actually not. Any expression is a valid join
+expression, assuming that it returns a Boolean
+
+>>>> # in Python
+>>>> from pyspark.sql.functions import expr
+>>>> person.withColumnRenamed("id", "personId")\
+>>>> .join(sparkStatus, expr("array_contains(spark_status, id)")).show()
+
+-- in SQL
+
+SELECT * FROM
+(select id as personId, name, graduate_program, spark_status FROM person)
+INNER JOIN sparkStatus ON array_contains(spark_status, id)
+
++--------+----------------+----------------+---------------+---+--------------+
+|personId| name|graduate_program| spark_status| id| status|
++--------+----------------+----------------+---------------+---+--------------+
+| 0| Bill Chambers| 0| [100]|100| Contributor|
+| 1| Matei Zaharia| 1|[500, 250, 100]|500|Vice President|
+| 1| Matei Zaharia| 1|[500, 250, 100]|250| PMC Member|
+| 1| Matei Zaharia| 1|[500, 250, 100]|100| Contributor|
+| 2|Michael Armbrust| 1| [250, 100]|250| PMC Member|
+| 2|Michael Armbrust| 1| [250, 100]|100| Contributor|
++--------+----------------+----------------+---------------+---+--------------+
+
+
+
+Handling Duplicate Column Names-
+
+One of the tricky things that come up in joins is dealing with duplicate column names in your
+results DataFrame. In a DataFrame, each column has a unique ID within Spark’s SQL Engine,
+Catalyst. This unique ID is purely internal and not something that you can directly reference.
+This makes it quite difficult to refer to a specific column when you have a DataFrame with
+duplicate column names.
+
+This can occur in two distinct situations:
+1. The join expression that you specify does not remove one key from one of the input DataFrames and the keys have the same column name
+
+2. Two columns on which you are not performing the join have the same name.
+
+Approach 1: Different join expression
+
+When you have two keys that have the same name, probably the easiest fix is to change the join
+expression from a Boolean expression to a string or sequence. This automatically removes one of
+the columns for you during the join.
+
+Approach 2: Dropping the column after the join
+Another approach is to drop the offending column after the join. When doing this, we need to
+refer to the column via the original source DataFrame. We can do this if the join uses the same
+key names or if the source DataFrames have columns that simply have the same name.
+
+Approach 3: Renaming a column before the join
+We can avoid this issue altogether if we rename one of our columns before the join.
