@@ -141,6 +141,49 @@ A wide dependency (or wide transformation) style transformation will have input 
 contributing to many output partitions. This is also referred as 'Shuffle'.
 
 
+____________________________
+EXTRAS
+
+Transformation:
+Transformations is a kind of process that will transform your RDD data from one form to another 
+in Spark. and when you apply this operation on an RDD, you will get a new RDD with transformed data (RDDs in Spark are immutable).
+
+Transformations are the core of how you will be expressing your business logic using DAG in Spark and 
+intermediate operation conversion from one form to another RDD.
+Two types of transformations in SPARK:
+1.Wide Transformations
+2.Narrow Transformations
+
+Let’s see one by one.
+
+
+Narrow Transformations:
+These types of transformations convert each input partition to only one output partition. 
+When each partition at the parent RDD is used by at most one partition of the child RDD or when each partition 
+from child produced or dependent on single parent RDD.
+
+This kind of transformation is basically fast.
+Does not require any data shuffling over the cluster network or no data movement.
+Operation of map()and filter() belongs to this transformations.
+
+Wide Transformations:
+This type of transformation will have input partitions contributing to many output partitions. 
+When each partition at the parent RDD is used by multiple partitions of the child RDD or when
+each partition from child produced or dependent on multiple parent RDD.
+
+Slow as compare to narrow dependencies speed might be significantly affected as it might be 
+required to shuffle data around different nodes when creating new partitions.
+
+Might Require data shuffling over the cluster network or no data movement.
+
+Functions such as groupByKey(), aggregateByKey(), aggregate(), join(), repartition() are some examples of wider transformations.
+
+When working with Spark, it is always good or keeps in mind all operations or transformations Which 
+might require data shuffling and hence slow down the process. 
+
+Try to optimize and reduce the usage of wide dependencies as much as you can. 
+
+____________________________________________________
 
 Lazy Evaluation-
 Lazy evaulation means that Spark will wait until the very last moment to execute the graph of
@@ -639,6 +682,7 @@ this column itself (during the analyzer phase) because we did that for Spark:
 
 
 Expressions-
+
 
 An expression is a set of transformations on one or more values in a record in a DataFrame. Think of it like a
 function that takes as input one or more column names, resolves them, and then potentially
