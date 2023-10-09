@@ -585,6 +585,32 @@ optimizations at runtime, generating native Java bytecode that can remove entire
 during execution. Finally the result is returned to the user.
 
 
+Deploy modes-
+Whenever we submit spark application by using spark-submit, alongwith the spark-submit, we also need to specify "deploy mode".
+There are 2 types of deploy mode- 
+
+1. Client mode.
+2. Cluster mode.
+
+Let's say we submitted the spark application from client machine. There is one resource manager which will provide the resources 
+in order to run the spark application. This resource manager will create container in worker nodes and in one of the container where the driver 
+is running will be called as Application-Master container which will store your main program. So the execution of spark application actually starts from here i.e
+from the worker node.
+
+Client Mode - The spark driver component runs on the machine node where we submit the spark job. This mode support both interactive shells 
+and the job submission commands.
+
+Disadvantages are -
+1. If the machine node fails then the entire job fails.
+2. The performance of this mode is worst hence not preferred in production environment.
+
+To overcome this issue, we use Cluster Mode for deployment in a production environment.
+Cluster mode-
+The spark job launches the driver component within the cluster as a part of the sub-process of Application Master.
+We can use the spark-submit command for deployment and it does not support interactive shell mode.
+There is a dedicated cluster manager such as YARN, Apache Mesos, Kubernetes, etc. for allocating the resources required for the job to run.
+In case the program fails, the driver program is reinstatiated because the driver program are run in application master.
+ 
 
 CHAPTER 5 - Basic Structured Operations
 
